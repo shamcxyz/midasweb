@@ -23,30 +23,10 @@ const userSchema = new mongoose.Schema({
   company: String,
   email: { type: String, unique: true },
   password: String,
-  group: { type: mongoose.Schema.Types.ObjectId, ref: 'Group', default: null },
   role: { type: String, enum: ['user', 'admin'], default: 'user' },
-  groupAffiliationStatus: { type: String, enum: ['none', 'pending', 'approved', 'rejected'], default: 'none' },
 });
 
 const User = mongoose.model("User", userSchema);
-
-// Group schema and model
-const groupSchema = new mongoose.Schema({
-  name: String,
-  adminCode: { type: String, unique: true }, // Represents the group code
-  adminEmail: String, // Email of the group admin
-});
-
-const Group = mongoose.model("Group", groupSchema);
-
-// AffiliationRequest schema and model
-const affiliationRequestSchema = new mongoose.Schema({
-  user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
-  group: { type: mongoose.Schema.Types.ObjectId, ref: 'Group' },
-  status: { type: String, enum: ['pending', 'approved', 'rejected'], default: 'pending' },
-});
-
-const AffiliationRequest = mongoose.model("AffiliationRequest", affiliationRequestSchema);
 
 // Middleware
 app.use(cors({ origin: "http://localhost:3000", credentials: true }));
@@ -60,17 +40,7 @@ app.use(
   })
 );
 
-// Nodemailer setup
-const transporter = nodemailer.createTransport({
-  // Configure your email service settings
-  service: 'gmail', // Example using Gmail
-  auth: {
-    user: 'your_email@gmail.com', // Replace with your email
-    pass: 'your_email_password',  // Replace with your email password
-  },
-});
-
-// Middleware to check if user is authenticated
+// // Middleware to check if user is authenticated
 function isAuthenticated(req, res, next) {
   if (req.session.userId) {
     next();
@@ -81,7 +51,7 @@ function isAuthenticated(req, res, next) {
 
 // Register endpoint
 app.post("/api/register", async (req, res) => {
-  const { name, company, email, password, confirmPassword } = req.body;
+  const { name, company, email, password, confirmPassword, isAdmin } = req.body;
 
   // Validate required fields
   if (!name || !company || !email || !password || !confirmPassword) {
@@ -106,13 +76,17 @@ app.post("/api/register", async (req, res) => {
 
   try {
     const hashedPassword = await bcrypt.hash(password, 10);
+    if (isAdmin) {
+      role = 'admin';
+    } else {
+      role = 'user';
+    }
     const user = new User({
       name,
       company,
       email,
       password: hashedPassword,
-      role: 'user',
-      groupAffiliationStatus: 'none',
+      role: role,
     });
     await user.save();
     res.status(201).json({ message: "User registered successfully" });
@@ -139,7 +113,6 @@ app.post("/api/login", async (req, res) => {
         name: user.name,
         email: user.email,
         role: user.role,
-        groupAffiliationStatus: user.groupAffiliationStatus,
       },
     });
   } catch (error) {
@@ -150,129 +123,19 @@ app.post("/api/login", async (req, res) => {
 // Endpoint to get logged-in user profile
 app.get("/api/profile", isAuthenticated, async (req, res) => {
   try {
-    const user = await User.findById(req.session.userId).populate('group');
+    const user = await User.findById(req.session.userId)
     if (!user) return res.status(404).json({ message: "User not found" });
     res.json({
       name: user.name,
       email: user.email,
       company: user.company,
       role: user.role,
-      groupAffiliationStatus: user.groupAffiliationStatus,
-      group: user.group ? { name: user.group.name, adminCode: user.group.adminCode } : null,
     });
   } catch (error) {
     res.status(500).json({ message: "Error fetching profile", error });
   }
 });
 
-// Route to request group affiliation
-app.post('/api/request-affiliation', isAuthenticated, async (req, res) => {
-  const { adminCode } = req.body;
-  const userId = req.session.userId;
-
-  try {
-    const group = await Group.findOne({ adminCode });
-    if (!group) {
-      return res.status(400).json({ message: 'Invalid admin code.' });
-    }
-
-    // Check if user already has a pending or approved request
-    const existingRequest = await AffiliationRequest.findOne({ user: userId, group: group._id });
-    if (existingRequest && existingRequest.status === 'pending') {
-      return res.status(400).json({ message: 'You already have a pending request for this group.' });
-    }
-    if (existingRequest && existingRequest.status === 'approved') {
-      return res.status(400).json({ message: 'You are already a member of this group.' });
-    }
-
-    // Create a new affiliation request
-    const affiliationRequest = new AffiliationRequest({
-      user: userId,
-      group: group._id,
-    });
-    await affiliationRequest.save();
-
-    // Update user's affiliation status
-    await User.findByIdAndUpdate(userId, { groupAffiliationStatus: 'pending' });
-
-    // Send email to group admin
-    const approvalLink = `http://localhost:4999/api/approve-affiliation/${affiliationRequest._id}`;
-    const emailContent = `User ${user.email} has requested to join your group. Click the link to approve: ${approvalLink}`;
-    const mailOptions = {
-      from: 'your_email@gmail.com', // Replace with your email
-      to: group.adminEmail,
-      subject: 'Group Affiliation Request',
-      text: emailContent,
-    };
-
-    transporter.sendMail(mailOptions, (error, info) => {
-      if (error) {
-        console.error('Error sending email:', error);
-        return res.status(500).json({ message: 'Error sending email to group admin.' });
-      } else {
-        console.log('Email sent:', info.response);
-        res.json({ message: 'Affiliation request sent to group admin.' });
-      }
-    });
-  } catch (error) {
-    console.error('Error requesting affiliation:', error);
-    res.status(500).json({ message: 'Error requesting affiliation.' });
-  }
-});
-
-// Route to approve affiliation
-app.get('/api/approve-affiliation/:requestId', async (req, res) => {
-  const { requestId } = req.params;
-
-  try {
-    const affiliationRequest = await AffiliationRequest.findById(requestId).populate('group user');
-    if (!affiliationRequest) {
-      return res.status(404).json({ message: 'Affiliation request not found.' });
-    }
-
-    // Update the request status and user's group affiliation
-    affiliationRequest.status = 'approved';
-    await affiliationRequest.save();
-
-    await User.findByIdAndUpdate(affiliationRequest.user._id, {
-      group: affiliationRequest.group._id,
-      groupAffiliationStatus: 'approved',
-    });
-
-    res.send('User affiliation approved successfully.');
-  } catch (error) {
-    console.error('Error approving affiliation:', error);
-    res.status(500).json({ message: 'Error approving affiliation.' });
-  }
-});
-
-// Route to create a group (for testing purposes)
-app.post('/api/create-group', async (req, res) => {
-  const { name, adminCode, adminEmail } = req.body;
-
-  // Validate required fields
-  if (!name || !adminCode || !adminEmail) {
-    return res.status(400).json({ message: "All fields are required." });
-  }
-
-  // Check if group with same adminCode already exists
-  const existingGroup = await Group.findOne({ adminCode });
-  if (existingGroup) {
-    return res.status(400).json({ message: "Group with this admin code already exists." });
-  }
-
-  try {
-    const group = new Group({
-      name,
-      adminCode,
-      adminEmail,
-    });
-    await group.save();
-    res.status(201).json({ message: "Group created successfully", group });
-  } catch (error) {
-    res.status(500).json({ message: "Error creating group", error });
-  }
-});
 
 // Logout endpoint
 app.post("/api/logout", (req, res) => {
@@ -282,5 +145,70 @@ app.post("/api/logout", (req, res) => {
     res.json({ message: "Logged out successfully" });
   });
 });
+
+// Generate invite code endpoint
+app.post("/api/admin/generate-code", isAuthenticated, async (req, res) => {
+  try {
+    const user = await User.findById(req.session.userId);
+    if (!user || user.role !== 'admin') {
+      return res.status(403).json({ message: 'Not authorized' });
+    }
+
+    // Generate a random 8-character code
+    const code = Math.random().toString(36).substring(2, 10).toUpperCase();
+
+    // Save the code to the database (you'll need to create an InviteCode model)
+    const inviteCode = new InviteCode({
+      code,
+      createdBy: user._id,
+      used: false
+    });
+    await inviteCode.save();
+
+    res.json({ code });
+  } catch (error) {
+    res.status(500).json({ message: "Error generating code", error });
+  }
+});
+
+// Get users for admin
+app.get("/api/admin/users", isAuthenticated, async (req, res) => {
+  try {
+    const admin = await User.findById(req.session.userId);
+    if (!admin || admin.role !== 'admin') {
+      return res.status(403).json({ message: 'Not authorized' });
+    }
+
+    // Get all users who joined using this admin's codes
+    const users = await User.find({ 
+      joinCode: { $in: await InviteCode.find({ createdBy: admin._id }).distinct('code') }
+    }).select('-password');
+
+    res.json({ 
+      users: users.map(user => ({
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        company: user.company,
+        joinCode: user.joinCode,
+        createdAt: user.createdAt
+      }))
+    });
+  } catch (error) {
+    res.status(500).json({ message: "Error fetching users", error });
+  }
+});
+
+// Add this schema for invite codes
+const inviteCodeSchema = new mongoose.Schema({
+  code: { type: String, required: true, unique: true },
+  createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  used: { type: Boolean, default: false },
+  usedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  createdAt: { type: Date, default: Date.now },
+  expiresAt: { type: Date, default: () => new Date(+new Date() + 7*24*60*60*1000) } // 7 days expiry
+});
+
+const InviteCode = mongoose.model('InviteCode', inviteCodeSchema);
 
 app.listen(4999, () => console.log("Server running on http://localhost:4999"));

@@ -12,7 +12,6 @@ export default function SignUp() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [adminCode, setAdminCode] = useState("");
   const [isAdmin, setIsAdmin] = useState(false);
   const router = useRouter();
 
@@ -32,14 +31,6 @@ export default function SignUp() {
       confirmPassword,
       isAdmin,
     };
-
-    if (isAdmin) {
-      if (!adminCode) {
-        alert("Admin code is required for admin registration.");
-        return;
-      }
-      requestBody.adminCode = adminCode;
-    }
 
     const response = await fetch("http://localhost:4999/api/register", {
       method: "POST",
@@ -161,26 +152,6 @@ export default function SignUp() {
                   Yes, I want to register as an admin.
                 </span>
               </div>
-              {/* Admin Code Input */}
-              {isAdmin && (
-                <div>
-                  <label
-                    className="block text-sm font-medium text-indigo-200/65"
-                    htmlFor="adminCode"
-                  >
-                    Admin Code <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    id="adminCode"
-                    type="password"
-                    value={adminCode}
-                    onChange={(e) => setAdminCode(e.target.value)}
-                    className="form-input w-full"
-                    placeholder="Enter the admin code"
-                    required
-                  />
-                </div>
-              )}
             </div>
             <div className="mt-6 space-y-5">
               <button

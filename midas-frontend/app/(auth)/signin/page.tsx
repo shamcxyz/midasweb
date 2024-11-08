@@ -9,29 +9,40 @@ import { useRouter } from "next/navigation";
 export default function SignIn() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const router = useRouter(); // Initialize router
+  const [error, setError] = useState("");
+  const router = useRouter();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setError("");
 
-    const response = await fetch("http://localhost:4999/api/login", {
-      method: "POST",
-      credentials: "include", // Include cookies
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        email,
-        password,
-      }),
-    });
+    try {
+      const response = await fetch("http://localhost:4999/api/login", {
+        method: "POST",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          email,
+          password,
+        }),
+      });
 
-    if (response.ok) {
-      alert("Login successful!");
-      router.push("/dashboard");
-    } else {
-      const errorData = await response.json();
-      alert(`Login failed: ${errorData.message}`);
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.user.role === 'admin') {
+          router.push('/dashboard/admin');
+        } else {
+          router.push('/dashboard/groups');
+        }
+      } else {
+        setError(data.message || "Login failed");
+      }
+    } catch (err) {
+      console.error("Login error:", err);
+      setError("An error occurred during login");
     }
   };
 
@@ -44,6 +55,11 @@ export default function SignIn() {
               Welcome back
             </h1>
           </div>
+          {error && (
+            <div className="mx-auto max-w-[400px] mb-4 text-red-500 text-center">
+              {error}
+            </div>
+          )}
           <form onSubmit={handleSubmit} className="mx-auto max-w-[400px]">
             <div className="space-y-5">
               <div>
