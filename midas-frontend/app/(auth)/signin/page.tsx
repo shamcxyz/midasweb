@@ -1,3 +1,5 @@
+// signin.tsx
+
 "use client";
 
 import { useState } from "react";
@@ -14,20 +16,19 @@ export default function SignIn() {
 
     const response = await fetch("http://localhost:4999/api/login", {
       method: "POST",
+      credentials: "include", // Include cookies
       headers: {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        email, 
+        email,
         password,
       }),
     });
 
     if (response.ok) {
       alert("Login successful!");
-      localStorage.setItem("loggedInUser", JSON.stringify(email));
       router.push("/dashboard");
-      // Redirect or update the UI accordingly
     } else {
       const errorData = await response.json();
       alert(`Login failed: ${errorData.message}`);
@@ -71,8 +72,8 @@ export default function SignIn() {
                     Password
                   </label>
                   <Link
-                    className="text-sm text-gray-600 hover:underline"
                     href="/reset-password"
+                    className="text-sm text-gray-600 hover:underline"
                   >
                     Forgot?
                   </Link>
@@ -91,21 +92,21 @@ export default function SignIn() {
             <div className="mt-6 space-y-5">
               <button
                 type="submit"
-                className="btn w-full bg-gradient-to-t from-indigo-600 to-indigo-500 bg-[length:100%_100%] bg-[bottom] text-white shadow-[inset_0px_1px_0px_0px_theme(colors.white/.16)] hover:bg-[length:100%_150%]"
+                className="btn w-full bg-gradient-to-t from-indigo-600 to-indigo-500 bg-[length:100%_100%] bg-bottom text-white shadow-[inset_0px_1px_0px_0px_rgba(255,255,255,0.16)] hover:bg-[length:100%_150%]"
               >
                 Sign in
               </button>
               <div className="flex items-center gap-3 text-center text-sm italic text-gray-600 before:h-px before:flex-1 before:bg-gradient-to-r before:from-transparent before:via-gray-400/25 after:h-px after:flex-1 after:bg-gradient-to-r after:from-transparent after:via-gray-400/25">
                 or
               </div>
-              <button className="btn relative w-full bg-gradient-to-b from-gray-800 to-gray-800/60 bg-[length:100%_100%] bg-[bottom] text-gray-300 before:pointer-events-none before:absolute before:inset-0 before:rounded-[inherit] before:border before:border-transparent before:[background:linear-gradient(to_right,theme(colors.gray.800),theme(colors.gray.700),theme(colors.gray.800))_border-box] before:[mask-composite:exclude_!important] before:[mask:linear-gradient(white_0_0)_padding-box,_linear-gradient(white_0_0)] hover:bg-[length:100%_150%]">
+              <button className="btn relative w-full bg-gradient-to-b from-gray-800 to-gray-800/60 bg-[length:100%_100%] bg-bottom text-gray-300 hover:bg-[length:100%_150%]">
                 Sign In with Google
               </button>
             </div>
           </form>
           <div className="mt-6 text-center text-sm text-indigo-200/65">
             Don't have an account?{" "}
-            <Link className="font-medium text-indigo-500" href="/signup">
+            <Link href="/signup" className="font-medium text-indigo-500">
               Sign Up
             </Link>
           </div>
