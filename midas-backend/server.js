@@ -333,7 +333,7 @@ async function forwardReimbursementRequest(data, receiptPath) {
     form.append('receipt', fs.createReadStream(receiptPath));
 
     // Make POST request to Python API's reimbursement endpoint
-    const response = await axios.post(`${process.env.PYTHON_API_URL}/api/request_reimbursement`, form, {
+    const response = await axios.post(`${process.env.PYTHON_API_URL}/request_reimbursement`, form, {
       headers: form.getHeaders()
     });
 
