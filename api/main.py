@@ -185,7 +185,7 @@ async def analyze_with_gpt4o(content: str, is_image: bool = False) -> str:
             ]
         
         response = client.chat.completions.create(
-            model="gpt-4o-mini",
+            model="gpt-3.5-turbo",
             messages=messages
         )
         
@@ -238,7 +238,7 @@ async def send_email(name: str, user_email: str, admin_email: str, details: str,
             detail=f"Failed to send email: {str(e)}"
         )
 
-@app.post("/request_reimbursement")
+@app.post("/api/request_reimbursement")
 async def request_reimbursement(
     role: str = Form(...),
     name: str = Form(...),

@@ -14,7 +14,7 @@ export default function ReimbursementPage(): JSX.Element {
     // Fetch group name
     const fetchGroupName = async () => {
       try {
-        const response = await fetch(`http://localhost:4999/api/groups/${groupId}`, {
+        const response = await fetch(`http://localhost:4999/api/group/${groupId}`, {
           credentials: "include",
         });
         if (response.ok) {
@@ -39,12 +39,6 @@ export default function ReimbursementPage(): JSX.Element {
   return (
     <div className="flex items-center justify-center p-6">
       <div className="bg-white shadow-xl rounded-lg p-8 max-w-lg w-full">
-        {groupName && (
-          <div className="text-center text-gray-600 mb-4">
-            Submitting for: <span className="font-semibold">{groupName}</span>
-          </div>
-        )}
-        
         <h1 className="text-3xl font-bold text-center text-gray-800 mb-8">
           Reimbursement Requests
         </h1>
@@ -66,12 +60,21 @@ export default function ReimbursementPage(): JSX.Element {
             </select>
           </div>
           
-          <button
-            type="submit"
-            className="w-full bg-gray-800 text-white py-3 px-6 rounded-lg font-semibold hover:bg-gray-900 transition-colors duration-200 shadow-md"
-          >
-            Next
-          </button>
+          <div className="flex gap-4">
+            <button
+              type="button"
+              onClick={() => router.push('/dashboard/groups')}
+              className="flex-1 bg-gray-200 text-gray-800 py-3 px-6 rounded-lg font-semibold hover:bg-gray-300 transition-colors duration-200 shadow-md"
+            >
+              Back
+            </button>
+            <button
+              type="submit"
+              className="flex-1 bg-gray-800 text-white py-3 px-6 rounded-lg font-semibold hover:bg-gray-900 transition-colors duration-200 shadow-md"
+            >
+              Next
+            </button>
+          </div>
         </form>
       </div>
     </div>

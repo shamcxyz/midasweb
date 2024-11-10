@@ -59,6 +59,18 @@ const reimbursementRequestSchema = new mongoose.Schema({
 
 const ReimbursementRequest = mongoose.model("ReimbursementRequest", reimbursementRequestSchema);
 
+// Group schema and model
+const groupSchema = new mongoose.Schema({
+  name: { type: String, required: true },
+  company: { type: String, required: true },
+  inviteCode: { type: String, required: true, unique: true },
+  isPrivate: { type: Boolean, default: false },
+  memberCount: { type: Number, default: 0 },
+  lastActive: { type: Date, default: Date.now }
+});
+
+const Group = mongoose.model('Group', groupSchema);
+
 // Middleware
 app.use(cors({ origin: "http://localhost:3000", credentials: true }));
 app.use(express.json());
@@ -239,25 +251,56 @@ app.post("/api/logout", (req, res) => {
 // Generate invite code endpoint
 app.post("/api/admin/generate-code", isAuthenticated, async (req, res) => {
   try {
+    // First, verify the user is an admin
     const user = await User.findById(req.session.userId);
+
     if (!user || user.role !== 'admin') {
       return res.status(403).json({ message: 'Not authorized' });
     }
 
     // Generate a random 8-character code
     const code = Math.random().toString(36).substring(2, 10).toUpperCase();
+    // Check if code already exists
+    const existingCode = await InviteCode.findOne({ code });
+    if (existingCode) {
+      return res.status(400).json({ message: 'Please try again - code already exists' });
+    }
 
-    // Save the code to the database
+    // Create a new invite code
     const inviteCode = new InviteCode({
       code,
       createdBy: user._id,
-      used: false
+      used: false,
+      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // 7 days from now
     });
     await inviteCode.save();
 
-    res.json({ code });
+    // Check if group already exists for this company
+    let group = await Group.findOne({ company: user.company });
+    
+    if (!group) {
+      // Create a new group only if one doesn't exist
+      group = new Group({
+        name: user.company,
+        company: user.company,
+        inviteCode: code,
+        memberCount: 1, // Start with 1 for the admin
+        lastActive: new Date()
+      });
+      await group.save();
+    }
+
+    res.json({ 
+      code,
+      message: 'Invite code generated successfully'
+    });
+
   } catch (error) {
-    res.status(500).json({ message: "Error generating code", error });
+    console.error("Error generating code:", error);
+    res.status(500).json({ 
+      message: "Error generating invite code", 
+      error: error.message 
+    });
   }
 });
 
@@ -311,6 +354,14 @@ app.post("/api/join_group", isAuthenticated, async (req, res) => {
       return res.status(400).json({ message: "User has already joined a group." });
     }
 
+    // Update group member count
+    const group = await Group.findOne({ inviteCode: group_code });
+    if (group) {
+      group.memberCount += 1;
+      group.lastActive = new Date();
+      await group.save();
+    }
+
     // Assign the invite code to the user
     user.joinCode = code.code;
     await user.save();
@@ -332,13 +383,14 @@ async function forwardReimbursementRequest(data, receiptPath) {
     // Create form data to send to Python API
     const FormData = require('form-data');
     const form = new FormData();
+    console.log(    console.log(data.reimbursement_details))
+
     form.append('role', data.role);
     form.append('name', data.name);
     form.append('email', data.email);
     form.append('admin_email', data.admin_email);
     form.append('reimbursement_details', data.reimbursement_details);
     form.append('receipt', fs.createReadStream(receiptPath));
-
     // Make POST request to Python API's reimbursement endpoint
     const response = await axios.post(`${process.env.PYTHON_API_URL}/api/request_reimbursement`, form, {
       headers: form.getHeaders()
@@ -382,6 +434,7 @@ app.post("/api/request_reimbursement", upload.single('receipt'), isAuthenticated
     }
 
     // Forward the request to Python API
+    console.log("Forwarding reimbursement request to Python API");
     const pythonResponse = await forwardReimbursementRequest(
       { role: user.role, name, email, admin_email, reimbursement_details },
       receipt.path
@@ -389,6 +442,7 @@ app.post("/api/request_reimbursement", upload.single('receipt'), isAuthenticated
 
     res.status(200).json(pythonResponse);
   } catch (error) {
+    console.log("Error");
     res.status(500).json({ error: "An error occurred while processing your request." });
   }
 });
@@ -421,6 +475,60 @@ app.use((err, req, res, next) => {
     return res.status(500).json({ error: err.message });
   }
   next();
+});
+
+// Admin Info Endpoint
+app.get("/api/admin/info", isAuthenticated, async (req, res) => {
+  try {
+    const admin = await User.findById(req.session.userId);
+    if (!admin || admin.role !== 'admin') {
+      return res.status(403).json({ message: 'Not authorized' });
+    }
+
+    res.json({ 
+      company: admin.company
+    });
+  } catch (error) {
+    res.status(500).json({ message: "Error fetching admin info", error });
+  }
+});
+
+// Get user's groups endpoint
+app.get("/api/groups", isAuthenticated, async (req, res) => {
+  try {
+    const user = await User.findById(req.session.userId);
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    // Find the admin who created the invite code
+    const adminInviteCode = await InviteCode.findOne({ code: user.joinCode });
+    if (!adminInviteCode) {
+      return res.json([]); // Return empty array if no invite code found
+    }
+
+    // Find the admin user
+    const admin = await User.findById(adminInviteCode.createdBy);
+    if (!admin) {
+      return res.json([]); // Return empty array if no admin found
+    }
+
+    // Create a group object with the admin's company info
+    const group = {
+      id: adminInviteCode._id,
+      name: admin.company,
+      company: admin.company,
+      inviteCode: user.joinCode,
+      isPrivate: false,
+      lastActive: adminInviteCode.createdAt,
+      memberCount: await User.countDocuments({ joinCode: user.joinCode })
+    };
+
+    res.json([group]); // Return as array for consistency with frontend
+  } catch (error) {
+    console.error("Error fetching groups:", error);
+    res.status(500).json({ message: "Error fetching groups", error });
+  }
 });
 
 // Start the server
