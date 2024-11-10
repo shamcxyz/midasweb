@@ -1,8 +1,11 @@
 fastapi
 uvicorn
-openai==0.28
+openai>=1.0.0
 python-multipart
 pydantic
 email-validator
 python-dotenv
 python-docx
+PyPDF2==3.0.0
+pillow==10.0.0
+easyocr==1.7.0

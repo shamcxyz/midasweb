@@ -92,8 +92,15 @@ const storage = multer.diskStorage({
 const upload = multer({ 
   storage: storage,
   fileFilter: function (req, file, cb) {
-    if (file.mimetype !== 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
-      return cb(new Error('Only .docx files are allowed!'), false);
+    const allowed_types = [
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/pdf',
+      'image/jpeg',
+      'image/png',
+      'application/zip'
+    ];
+    if (!allowed_types.includes(file.mimetype)) {
+      return cb(new Error('Only .docx, .pdf, .jpg, .png and .zip files are allowed!'), false);
     }
     cb(null, true);
   },
@@ -333,7 +340,7 @@ async function forwardReimbursementRequest(data, receiptPath) {
     form.append('receipt', fs.createReadStream(receiptPath));
 
     // Make POST request to Python API's reimbursement endpoint
-    const response = await axios.post(`${process.env.PYTHON_API_URL}/request_reimbursement`, form, {
+    const response = await axios.post(`${process.env.PYTHON_API_URL}/api/request_reimbursement`, form, {
       headers: form.getHeaders()
     });
 
