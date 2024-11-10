@@ -60,3 +60,5 @@ pip-delete-this-directory.txt
 
 # Jupyter Notebook checkpoints
 .ipynb_checkpoints/
+# Upload directory
+uploads/
