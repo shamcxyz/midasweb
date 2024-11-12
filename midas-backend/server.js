@@ -6,7 +6,6 @@ const session = require("express-session");
 const mongoose = require("mongoose");
 const cors = require("cors");
 const multer = require("multer"); // For handling file uploads
-const mammoth = require("mammoth"); // For parsing .docx files
 const axios = require("axios"); // For making HTTP requests to Python API
 const fs = require("fs");
 const path = require("path");
@@ -29,7 +28,8 @@ const userSchema = new mongoose.Schema({
   email: { type: String, unique: true },
   password: String,
   role: { type: String, enum: ['user', 'admin'], default: 'user' },
-  joinCode: { type: String, default: null }, // Added joinCode field
+  groups: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Group' }], // Array of group IDs
+  activeGroup: { type: mongoose.Schema.Types.ObjectId, ref: 'Group', default: null }, // Active group ID
 });
 
 const User = mongoose.model("User", userSchema);
@@ -54,6 +54,7 @@ const reimbursementRequestSchema = new mongoose.Schema({
   receiptPath: { type: String, required: true },
   status: { type: String, enum: ['Approved', 'Rejected'], required: true },
   feedback: { type: String, required: true },
+  groupId: { type: mongoose.Schema.Types.ObjectId, ref: 'Group', required: true }, // Link to the group
   createdAt: { type: Date, default: Date.now }
 });
 
@@ -64,6 +65,7 @@ const groupSchema = new mongoose.Schema({
   name: { type: String, required: true },
   company: { type: String, required: true },
   inviteCode: { type: String, required: true, unique: true },
+  adminEmail: { type: String, required: true }, // Admin's email
   isPrivate: { type: Boolean, default: false },
   memberCount: { type: Number, default: 0 },
   lastActive: { type: Date, default: Date.now }
@@ -119,17 +121,6 @@ const upload = multer({
   limits: { fileSize: 5 * 1024 * 1024 } // 5MB limit
 });
 
-// Function to extract text from .docx file (optional if Python API handles it)
-async function extractTextFromDocx(filePath) {
-  try {
-    const result = await mammoth.extractRawText({ path: filePath });
-    return result.value; // The extracted text
-  } catch (error) {
-    console.error("Error extracting text from .docx:", error);
-    return null;
-  }
-}
-
 // Middleware to check if user is authenticated
 function isAuthenticated(req, res, next) {
   if (req.session.userId) {
@@ -141,7 +132,7 @@ function isAuthenticated(req, res, next) {
 
 // Register endpoint
 app.post("/api/register", async (req, res) => {
-  const { name, company, email, password, confirmPassword, isAdmin, joinCode } = req.body;
+  const { name, company, email, password, confirmPassword, isAdmin } = req.body;
 
   // Validate required fields
   if (!name || !company || !email || !password || !confirmPassword) {
@@ -171,25 +162,14 @@ app.post("/api/register", async (req, res) => {
       role = 'admin';
     }
 
-    let userJoinCode = null;
-    if (joinCode) {
-      const code = await InviteCode.findOne({ code: joinCode, used: false, expiresAt: { $gt: new Date() } });
-      if (!code) {
-        return res.status(400).json({ message: "Invalid or expired invite code." });
-      }
-      userJoinCode = code.code;
-      code.used = true;
-      code.usedBy = existingUser ? existingUser._id : null;
-      await code.save();
-    }
-
     const user = new User({
       name,
       company,
       email,
       password: hashedPassword,
       role: role,
-      joinCode: userJoinCode,
+      groups: [],
+      activeGroup: null,
     });
     await user.save();
     res.status(201).json({ message: "User registered successfully" });
@@ -226,13 +206,20 @@ app.post("/api/login", async (req, res) => {
 // Endpoint to get logged-in user profile
 app.get("/api/profile", isAuthenticated, async (req, res) => {
   try {
-    const user = await User.findById(req.session.userId)
+    const user = await User.findById(req.session.userId).populate('activeGroup');
     if (!user) return res.status(404).json({ message: "User not found" });
+    
+    let adminEmail = null;
+    if (user.activeGroup) {
+      adminEmail = user.activeGroup.adminEmail;
+    }
+
     res.json({
       name: user.name,
       email: user.email,
       company: user.company,
       role: user.role,
+      admin_email: adminEmail // Include admin_email from the active group
     });
   } catch (error) {
     res.status(500).json({ message: "Error fetching profile", error });
@@ -275,20 +262,16 @@ app.post("/api/admin/generate-code", isAuthenticated, async (req, res) => {
     });
     await inviteCode.save();
 
-    // Check if group already exists for this company
-    let group = await Group.findOne({ company: user.company });
-    
-    if (!group) {
-      // Create a new group only if one doesn't exist
-      group = new Group({
-        name: user.company,
-        company: user.company,
-        inviteCode: code,
-        memberCount: 1, // Start with 1 for the admin
-        lastActive: new Date()
-      });
-      await group.save();
-    }
+    // Create a new group
+    const group = new Group({
+      name: user.company,
+      company: user.company,
+      inviteCode: code,
+      adminEmail: user.email, // Added adminEmail here
+      memberCount: 1, // Start with 1 for the admin
+      lastActive: new Date()
+    });
+    await group.save();
 
     res.json({ 
       code,
@@ -312,9 +295,11 @@ app.get("/api/admin/users", isAuthenticated, async (req, res) => {
       return res.status(403).json({ message: 'Not authorized' });
     }
 
-    // Get all users who joined using this admin's codes
-    const adminInviteCodes = await InviteCode.find({ createdBy: admin._id }).distinct('code');
-    const users = await User.find({ joinCode: { $in: adminInviteCodes } }).select('-password');
+    // Get all users who have joined groups created by this admin
+    const adminGroups = await Group.find({ adminEmail: admin.email });
+    const adminGroupIds = adminGroups.map(group => group._id);
+
+    const users = await User.find({ groups: { $in: adminGroupIds } }).select('-password');
 
     res.json({ 
       users: users.map(user => ({
@@ -322,7 +307,8 @@ app.get("/api/admin/users", isAuthenticated, async (req, res) => {
         name: user.name,
         email: user.email,
         company: user.company,
-        joinCode: user.joinCode,
+        groups: user.groups,
+        activeGroup: user.activeGroup,
         createdAt: user.createdAt
       }))
     });
@@ -350,21 +336,31 @@ app.post("/api/join_group", isAuthenticated, async (req, res) => {
       return res.status(404).json({ message: "User not found." });
     }
 
-    if (user.joinCode) {
-      return res.status(400).json({ message: "User has already joined a group." });
+    // Find the group associated with the invite code
+    const group = await Group.findOne({ inviteCode: group_code });
+    if (!group) {
+      return res.status(404).json({ message: "Group not found." });
     }
+
+    // Check if user is already in the group
+    if (user.groups.includes(group._id)) {
+      return res.status(400).json({ message: "User is already a member of this group." });
+    }
+
+    // Add the group to user's groups array
+    user.groups.push(group._id);
+
+    // Set this group as active only if the user doesn't have an active group
+    if (!user.activeGroup) {
+      user.activeGroup = group._id;
+    }
+
+    await user.save();
 
     // Update group member count
-    const group = await Group.findOne({ inviteCode: group_code });
-    if (group) {
-      group.memberCount += 1;
-      group.lastActive = new Date();
-      await group.save();
-    }
-
-    // Assign the invite code to the user
-    user.joinCode = code.code;
-    await user.save();
+    group.memberCount += 1;
+    group.lastActive = new Date();
+    await group.save();
 
     // Mark the invite code as used
     code.used = true;
@@ -377,13 +373,40 @@ app.post("/api/join_group", isAuthenticated, async (req, res) => {
   }
 });
 
+// Switch active group endpoint
+app.post("/api/switch_active_group", isAuthenticated, async (req, res) => {
+  const { groupId } = req.body;
+
+  if (!groupId) {
+    return res.status(400).json({ message: "Group ID is required." });
+  }
+
+  try {
+    const user = await User.findById(req.session.userId);
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found." });
+    }
+
+    if (!user.groups.includes(groupId)) {
+      return res.status(400).json({ message: "User is not a member of this group." });
+    }
+
+    user.activeGroup = groupId;
+    await user.save();
+
+    res.json({ message: "Active group switched successfully." });
+  } catch (error) {
+    res.status(500).json({ message: "Error switching active group", error });
+  }
+});
+
 // Function to forward reimbursement requests to Python API
 async function forwardReimbursementRequest(data, receiptPath) {
   try {
     // Create form data to send to Python API
     const FormData = require('form-data');
     const form = new FormData();
-    console.log(    console.log(data.reimbursement_details))
 
     form.append('role', data.role);
     form.append('name', data.name);
@@ -405,12 +428,12 @@ async function forwardReimbursementRequest(data, receiptPath) {
 
 // Reimbursement Request Endpoint (Forward to Python API)
 app.post("/api/request_reimbursement", upload.single('receipt'), isAuthenticated, async (req, res) => {
-  const { name, email, admin_email, reimbursement_details } = req.body;
+  const { reimbursement_details } = req.body;
   const receipt = req.file;
 
   try {
     // Retrieve user from session
-    const user = await User.findById(req.session.userId);
+    const user = await User.findById(req.session.userId).populate('activeGroup');
     if (!user) {
       // Delete the uploaded file if user is not authenticated
       if (receipt && fs.existsSync(receipt.path)) {
@@ -433,12 +456,31 @@ app.post("/api/request_reimbursement", upload.single('receipt'), isAuthenticated
       return res.status(400).json({ error: "Receipt file is required." });
     }
 
+    // Get admin email from user's active group
+    const admin_email = user.activeGroup ? user.activeGroup.adminEmail : null;
+    if (!admin_email) {
+      return res.status(400).json({ error: "No active group or admin email found." });
+    }
+
     // Forward the request to Python API
     console.log("Forwarding reimbursement request to Python API");
     const pythonResponse = await forwardReimbursementRequest(
-      { role: user.role, name, email, admin_email, reimbursement_details },
+      { role: user.role, name: user.name, email: user.email, admin_email, reimbursement_details },
       receipt.path
     );
+
+    // Save the reimbursement request in the database
+    const reimbursementRequest = new ReimbursementRequest({
+      userEmail: user.email,
+      adminEmail: admin_email,
+      reimbursementDetails: reimbursement_details,
+      receiptPath: receipt.path,
+      status: pythonResponse.status,
+      feedback: pythonResponse.feedback,
+      groupId: user.activeGroup._id, // Link to the active group
+      createdAt: new Date()
+    });
+    await reimbursementRequest.save();
 
     res.status(200).json(pythonResponse);
   } catch (error) {
@@ -465,7 +507,7 @@ app.get("/api/admin/reimbursements", isAuthenticated, async (req, res) => {
   }
 });
 
-// Error-handling middleware for Multer (Moved after all routes)
+// Error-handling middleware for Multer
 app.use((err, req, res, next) => {
   if (err instanceof multer.MulterError) {
     // A Multer error occurred when uploading.
@@ -496,35 +538,30 @@ app.get("/api/admin/info", isAuthenticated, async (req, res) => {
 // Get user's groups endpoint
 app.get("/api/groups", isAuthenticated, async (req, res) => {
   try {
-    const user = await User.findById(req.session.userId);
+    const user = await User.findById(req.session.userId).populate('groups').populate('activeGroup');
     if (!user) {
       return res.status(404).json({ message: "User not found" });
     }
 
-    // Find the admin who created the invite code
-    const adminInviteCode = await InviteCode.findOne({ code: user.joinCode });
-    if (!adminInviteCode) {
-      return res.json([]); // Return empty array if no invite code found
-    }
+    // Get all groups the user belongs to
+    const groups = user.groups;
 
-    // Find the admin user
-    const admin = await User.findById(adminInviteCode.createdBy);
-    if (!admin) {
-      return res.json([]); // Return empty array if no admin found
-    }
+    const groupsData = await Promise.all(groups.map(async (group) => {
+      const memberCount = await User.countDocuments({ groups: group._id });
+      return {
+        id: group._id,
+        name: group.name,
+        company: group.company,
+        adminEmail: group.adminEmail,
+        inviteCode: group.inviteCode,
+        isPrivate: group.isPrivate,
+        lastActive: group.lastActive,
+        memberCount: memberCount,
+        isActive: user.activeGroup && user.activeGroup.equals(group._id),
+      };
+    }));
 
-    // Create a group object with the admin's company info
-    const group = {
-      id: adminInviteCode._id,
-      name: admin.company,
-      company: admin.company,
-      inviteCode: user.joinCode,
-      isPrivate: false,
-      lastActive: adminInviteCode.createdAt,
-      memberCount: await User.countDocuments({ joinCode: user.joinCode })
-    };
-
-    res.json([group]); // Return as array for consistency with frontend
+    res.json(groupsData);
   } catch (error) {
     console.error("Error fetching groups:", error);
     res.status(500).json({ message: "Error fetching groups", error });

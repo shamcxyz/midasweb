@@ -11,38 +11,12 @@ export default function UploadPage(): JSX.Element {
   const [amount, setAmount] = useState<string>("");
   const [documentType, setDocumentType] = useState<string>("receipt");
   const reimbursementType = searchParams.get("type");
-  const [userDetails, setUserDetails] = useState({
-    name: '',
-    email: '',
-    admin_email: ''
-  });
   const [details, setDetails] = useState<string>("");
   const [showModal, setShowModal] = useState(false);
   const [submissionResult, setSubmissionResult] = useState<{
     status: string;
     feedback: string;
   } | null>(null);
-
-  useEffect(() => {
-    const fetchUserDetails = async () => {
-      try {
-        const response = await fetch('http://localhost:4999/api/profile', {
-          credentials: 'include'
-        });
-        if (response.ok) {
-          const data = await response.json();
-          setUserDetails({
-            name: data.name,
-            email: data.email,
-            admin_email: data.group_admin_email
-          });
-        }
-      } catch (error) {
-        console.error('Error fetching user details:', error);
-      } 
-    };
-    fetchUserDetails();
-  }, []);
 
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -64,9 +38,6 @@ export default function UploadPage(): JSX.Element {
     }
 
     const formData = new FormData();
-    formData.append("name", userDetails.name);
-    formData.append("email", userDetails.email);
-    formData.append("admin_email", userDetails.admin_email);
     formData.append("reimbursement_details", JSON.stringify({
       type: reimbursementType,
       amount: amount,
@@ -93,13 +64,14 @@ export default function UploadPage(): JSX.Element {
         });
         setShowModal(true);
       } else {
-        throw new Error("Reimbursement request failed");
+        const errorData = await response.json();
+        throw new Error(errorData.error || "Reimbursement request failed");
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error submitting reimbursement request:", error);
       setSubmissionResult({
         status: "Error",
-        feedback: "Failed to submit reimbursement request. Please try again."
+        feedback: error.message || "Failed to submit reimbursement request. Please try again."
       });
       setShowModal(true);
     }
