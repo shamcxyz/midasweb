@@ -178,24 +178,45 @@ class MultiFileProcessor:
             logger.error(f"Error processing file {file_path}: {str(e)}")
             raise ValueError(f"Error processing file {file_path}: {str(e)}")
 
-async def analyze_with_gpt4o(content: str, is_image: bool = False) -> str:
+async def analyze_with_gpt4o(content: str, is_image: bool = False) -> Dict[str, str]:
     current_date = datetime.now().strftime("%Y-%m-%d")
     
     try:
         if is_image:
             messages = [
-                {"role": "system", "content": "You are an assistant helping with reimbursement requests. Analyze the receipt image and decide whether to 'Approve' or 'Reject' the request."},
-                {"role": "user", "content": [
-                    {"type": "text", "text": f"Today is {current_date}. Please analyze this receipt image:"},
-                    {"type": "image_url", "image_url": {
-                        "url": f"data:image/jpeg;base64,{content}"
-                    }}
-                ]}
+                {
+                    "role": "system",
+                    "content": (
+                        "You are an assistant helping with reimbursement requests. "
+                        "Analyze the receipt image and decide whether to 'Approve' or 'Reject' the request. "
+                        "Please respond in the following format:\n\n"
+                        "Decision: [Approve/Reject]\n"
+                        "Feedback: [Your explanation here]\n\n"
+                        "Please avoid using ambiguous language that might put the decision in doubt."
+                    )
+                },
+                {
+                    "role": "user",
+                    "content": f"Today is {current_date}. Please analyze this receipt image in base64 format:\n\n{content}"
+                }
             ]
         else:
             messages = [
-                {"role": "system", "content": "You are an assistant helping with reimbursement requests. Analyze the document and decide whether to 'Approve' or 'Reject' the request."},
-                {"role": "user", "content": f"Today is {current_date}. Here is the document content:\n\n{content}"}
+                {
+                    "role": "system",
+                    "content": (
+                        "You are an assistant helping with reimbursement requests. "
+                        "Analyze the document and decide whether to 'Approve' or 'Reject' the request. "
+                        "Please respond in the following format:\n\n"
+                        "Decision: [Approve/Reject]\n"
+                        "Feedback: [Your explanation here]\n\n"
+                        "Please avoid using ambiguous language that might put the decision in doubt."
+                    )
+                },
+                {
+                    "role": "user",
+                    "content": f"Today is {current_date}. Here is the document content:\n\n{content}"
+                }
             ]
         
         response = client.chat.completions.create(
@@ -203,8 +224,23 @@ async def analyze_with_gpt4o(content: str, is_image: bool = False) -> str:
             messages=messages
         )
         
-        return response.choices[0].message.content
-            
+        analysis = response.choices[0].message.content
+
+        # Parse the decision and feedback from the analysis
+        lines = analysis.strip().split('\n')
+        decision = None
+        feedback_lines = []
+        for line in lines:
+            if line.lower().startswith("decision:"):
+                decision = line[len("Decision:"):].strip()
+            elif line.lower().startswith("feedback:"):
+                feedback_lines.append(line[len("Feedback:"):].strip())
+            else:
+                feedback_lines.append(line.strip())
+        feedback = '\n'.join(feedback_lines)
+
+        return {'decision': decision, 'feedback': feedback}
+                
     except Exception as e:
         logger.error(f"Error analyzing content: {str(e)}")
         raise HTTPException(
@@ -212,17 +248,46 @@ async def analyze_with_gpt4o(content: str, is_image: bool = False) -> str:
             detail=f"Error analyzing content: {str(e)}"
         )
 
-def upload_to_s3(file_path: str, decision: str, admin_email: str) -> str:
-    """
-    Uploads a file to S3 with a naming convention based on the decision and admin_email.
-
-    :param file_path: Path to the file to upload
-    :param decision: "Approved" or "Rejected"
-    :param admin_email: The admin's email address
-    :return: URL of the uploaded file
-    """
+async def verify_decision_feedback(decision: str, feedback: str) -> bool:
     try:
-        # Remove '@' and '.' from admin_email to create target_repo
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "You are an assistant that verifies whether the provided decision aligns with the feedback. "
+                    "Respond with 'Yes' if they match or 'No' if they don't."
+                )
+            },
+            {
+                "role": "user",
+                "content": (
+                    f"Decision: {decision}\n"
+                    f"Feedback: {feedback}\n\n"
+                    "Does the decision match the feedback?"
+                )
+            }
+        ]
+
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=messages
+        )
+
+        verification = response.choices[0].message.content.strip().lower()
+        if 'yes' in verification:
+            return True
+        else:
+            return False
+
+    except Exception as e:
+        logger.error(f"Error verifying decision and feedback: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error verifying decision and feedback: {str(e)}"
+        )
+
+def upload_to_s3(file_path: str, decision: str, admin_email: str) -> str:
+    try:
         target_repo = admin_email.replace('@', '').replace('.', '')
 
         filename = os.path.basename(file_path)
@@ -292,25 +357,39 @@ async def request_reimbursement(
                 processed_content = processor.process_single_file(temp_file_path)
                 all_content.append(processed_content)
         
-        combined_analysis = ""
+        combined_feedback = ""
+        decisions = []
         for content_item in all_content:
-            analysis = await analyze_with_gpt4o(
+            analysis_result = await analyze_with_gpt4o(
                 content_item['content'],
                 is_image=content_item.get('is_image', False)
             )
-            combined_analysis += f"\n\n{analysis}"
+            decision = analysis_result['decision']
+            feedback = analysis_result['feedback']
+
+            # Verify decision and feedback
+            is_verified = await verify_decision_feedback(decision, feedback)
+            if not is_verified:
+                # Adjust the decision based on verification
+                decision = 'Rejected'
+
+            combined_feedback += f"{feedback}\n\n"
+            decisions.append(decision.capitalize())
         
-        is_approved = "approve" in combined_analysis.lower()
-        decision = "Approved" if is_approved else "Rejected"
+        # Determine the overall decision
+        if all(dec.lower() == 'approved' for dec in decisions):
+            final_decision = 'Approved'
+        else:
+            final_decision = 'Rejected'
         
         # Upload files to S3 with appropriate naming
         for temp_file in temp_files:
-            s3_url = upload_to_s3(temp_file, decision, admin_email)
+            s3_url = upload_to_s3(temp_file, final_decision, admin_email)
             s3_urls.append(s3_url)
         
         return {
-            "status": decision,
-            "feedback": combined_analysis,
+            "status": final_decision,
+            "feedback": combined_feedback.strip(),
             "processed_files": len(all_content),
             "uploaded_files": s3_urls
         }
