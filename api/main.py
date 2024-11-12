@@ -12,7 +12,7 @@ import boto3
 from botocore.exceptions import NoCredentialsError, ClientError
 from docx import Document
 import PyPDF2
-import re  # Import the re module for filename sanitization
+import re  
 
 # Initialize Logging
 logging.basicConfig(level=logging.INFO)
