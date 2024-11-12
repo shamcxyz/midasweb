@@ -12,6 +12,7 @@ import boto3
 from botocore.exceptions import NoCredentialsError, ClientError
 from docx import Document
 import PyPDF2
+import re  # Import the re module for filename sanitization
 
 # Initialize Logging
 logging.basicConfig(level=logging.INFO)
@@ -118,6 +119,7 @@ class MultiFileProcessor:
     @staticmethod
     async def save_upload_file(upload_file: UploadFile) -> str:
         try:
+            # Use the original filename for the temporary file
             with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(upload_file.filename)[1]) as tmp_file:
                 content = await upload_file.read()
                 tmp_file.write(content)
@@ -286,13 +288,20 @@ async def verify_decision_feedback(decision: str, feedback: str) -> bool:
             detail=f"Error verifying decision and feedback: {str(e)}"
         )
 
-def upload_to_s3(file_path: str, decision: str, admin_email: str) -> str:
+def sanitize_filename(filename):
+    # Remove any path separators
+    filename = os.path.basename(filename)
+    # Remove any potentially harmful characters
+    filename = re.sub(r'[^\w\.-]', '_', filename)
+    return filename
+
+def upload_to_s3(file_path: str, original_filename: str, decision: str, admin_email: str) -> str:
     try:
         target_repo = admin_email.replace('@', '').replace('.', '')
 
-        filename = os.path.basename(file_path)
+        name, ext = os.path.splitext(original_filename)
         current_datetime = datetime.now().strftime("%Y%m%d_%H%M%S")
-        new_filename = f"{filename}_{current_datetime}"
+        new_filename = f"{name}_{current_datetime}{ext}"
         object_name = f"Reimbursement/{target_repo}/{decision.upper()}/{new_filename}"
 
         s3_client.upload_file(file_path, AWS_S3_BUCKET_NAME, object_name)
@@ -348,7 +357,8 @@ async def request_reimbursement(
                 )
             
             temp_file_path = await processor.save_upload_file(file)
-            temp_files.append(temp_file_path)
+            original_filename = sanitize_filename(file.filename)
+            temp_files.append((temp_file_path, original_filename))  # Keep sanitized original filename
             
             if ext == '.zip':
                 zip_contents = processor.process_zip(temp_file_path)
@@ -383,8 +393,8 @@ async def request_reimbursement(
             final_decision = 'Rejected'
         
         # Upload files to S3 with appropriate naming
-        for temp_file in temp_files:
-            s3_url = upload_to_s3(temp_file, final_decision, admin_email)
+        for temp_file, original_filename in temp_files:
+            s3_url = upload_to_s3(temp_file, original_filename, final_decision, admin_email)
             s3_urls.append(s3_url)
         
         return {
@@ -393,7 +403,7 @@ async def request_reimbursement(
             "processed_files": len(all_content),
             "uploaded_files": s3_urls
         }
-        
+            
     except HTTPException as he:
         logger.error(f"HTTPException: {he.detail}")
         raise he
@@ -404,6 +414,6 @@ async def request_reimbursement(
             detail=f"Error processing request: {str(e)}"
         )
     finally:
-        for temp_file in temp_files:
+        for temp_file, _ in temp_files:
             if os.path.exists(temp_file):
                 os.remove(temp_file)
