@@ -6,27 +6,39 @@ from typing import List, Dict, Union
 from fastapi import FastAPI, HTTPException, Form, File, UploadFile, status
 from dotenv import load_dotenv
 from openai import OpenAI
-import smtplib
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
-from email.mime.application import MIMEApplication
-from docx import Document
-import PyPDF2
 import base64
 import logging
+import boto3
+from botocore.exceptions import NoCredentialsError, ClientError
+from docx import Document
+import PyPDF2
 
+# Initialize Logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Load Environment Variables
 load_dotenv()
 
+# OpenAI Configuration
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-SMTP_SERVER = os.getenv("SMTP_SERVER")
-SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
-EMAIL_USER = os.getenv("EMAIL_USER")
-EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD")
 
+# AWS S3 Configuration
+AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID")
+AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY")
+AWS_S3_BUCKET_NAME = os.getenv("AWS_S3_BUCKET_NAME", "midasbuket")
+AWS_REGION = os.getenv("AWS_REGION", "us-east-2")
+
+# Initialize OpenAI client
 client = OpenAI(api_key=OPENAI_API_KEY)
+
+# Initialize S3 client using Main Account Credentials
+s3_client = boto3.client(
+    's3',
+    region_name=AWS_REGION,
+    aws_access_key_id=AWS_ACCESS_KEY_ID,
+    aws_secret_access_key=AWS_SECRET_ACCESS_KEY
+)
 
 app = FastAPI(title="Reimbursement Request System")
 
@@ -55,8 +67,10 @@ class MultiFileProcessor:
                 content = []
                 
                 for page in reader.pages:
-                    content.append(page.extract_text())
-                    
+                    text = page.extract_text()
+                    if text:
+                        content.append(text)
+                        
                 text = "\n\n=== Page Break ===\n\n".join(content)
                 
                 lines = text.split('\n')
@@ -100,7 +114,7 @@ class MultiFileProcessor:
         except Exception as e:
             logger.error(f"Error extracting text from DOCX: {str(e)}")
             raise ValueError(f"Error extracting text from DOCX: {str(e)}")
-    
+
     @staticmethod
     async def save_upload_file(upload_file: UploadFile) -> str:
         try:
@@ -111,7 +125,7 @@ class MultiFileProcessor:
         except Exception as e:
             logger.error(f"Error saving uploaded file: {str(e)}")
             raise ValueError(f"Error saving uploaded file: {str(e)}")
-    
+
     @staticmethod
     def process_zip(zip_path: str) -> List[Dict[str, Union[str, bool]]]:
         processed_files = []
@@ -132,12 +146,12 @@ class MultiFileProcessor:
                                 except Exception as e:
                                     logger.error(f"Error processing file {file} in zip: {str(e)}")
                                     continue
-            
-            return processed_files
         except Exception as e:
             logger.error(f"Error processing zip file: {str(e)}")
             raise ValueError(f"Error processing zip file: {str(e)}")
-    
+        
+        return processed_files
+
     @staticmethod
     def process_single_file(file_path: str) -> Dict[str, Union[str, bool]]:
         ext = MultiFileProcessor.get_file_extension(file_path)
@@ -185,7 +199,7 @@ async def analyze_with_gpt4o(content: str, is_image: bool = False) -> str:
             ]
         
         response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
+            model="gpt-4o-mini",
             messages=messages
         )
         
@@ -198,47 +212,44 @@ async def analyze_with_gpt4o(content: str, is_image: bool = False) -> str:
             detail=f"Error analyzing content: {str(e)}"
         )
 
-async def send_email(name: str, user_email: str, admin_email: str, details: str, 
-                    decision_text: str, file_paths: List[str], is_approved: bool):
-    msg = MIMEMultipart()
-    msg["From"] = EMAIL_USER
-    msg["Subject"] = "Reimbursement Request Decision"
-    
-    if is_approved:
-        msg["To"] = admin_email
-        msg["Cc"] = user_email
-        body = (f"Reimbursement request from {name} ({user_email}) has been APPROVED.\n\n"
-                f"Details:\n{details}\n\nDecision Summary:\n{decision_text}")
-    else:
-        msg["To"] = user_email
-        body = (f"Dear {name},\n\nYour reimbursement request has been REJECTED.\n\n"
-                f"Reason:\n{decision_text}\n\nPlease contact your administrator for more details.")
-    
-    msg.attach(MIMEText(body, "plain"))
-    
-    for file_path in file_paths:
-        try:
-            with open(file_path, "rb") as f:
-                attachment = MIMEApplication(f.read(), Name=os.path.basename(file_path))
-                attachment["Content-Disposition"] = f'attachment; filename="{os.path.basename(file_path)}"'
-                msg.attach(attachment)
-        except Exception as e:
-            logger.error(f"Error attaching file {file_path}: {str(e)}")
-            continue
-    
+def upload_to_s3(file_path: str, decision: str) -> str:
+    """
+    Uploads a file to S3 with a naming convention based on the decision.
+
+    :param file_path: Path to the file to upload
+    :param decision: "Approved" or "Rejected"
+    :return: URL of the uploaded file
+    """
     try:
-        with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
-            server.starttls()
-            server.login(EMAIL_USER, EMAIL_PASSWORD)
-            server.send_message(msg)
-    except Exception as e:
-        logger.error(f"Failed to send email: {str(e)}")
+        filename = os.path.basename(file_path)
+        current_datetime = datetime.now().strftime("%Y%m%d_%H%M%S")
+        new_filename = f"{decision.upper()}_{filename}_{current_datetime}"
+        object_name = f"Reinbursement/{new_filename}"  # Use forward slashes
+        
+        s3_client.upload_file(file_path, AWS_S3_BUCKET_NAME, object_name)
+        s3_url = f"https://{AWS_S3_BUCKET_NAME}.s3.{AWS_REGION}.amazonaws.com/{object_name}"
+        logger.info(f"Uploaded {file_path} to {s3_url}")
+        return s3_url
+    except FileNotFoundError:
+        logger.error(f"The file {file_path} was not found.")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"The file {file_path} was not found."
+        )
+    except NoCredentialsError:
+        logger.error("AWS credentials not available.")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to send email: {str(e)}"
+            detail="AWS credentials not available."
+        )
+    except ClientError as e:
+        logger.error(f"Client error: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error uploading file to S3."
         )
 
-@app.post("/api/request_reimbursement")
+@app.post("/request_reimbursement")
 async def request_reimbursement(
     role: str = Form(...),
     name: str = Form(...),
@@ -256,6 +267,7 @@ async def request_reimbursement(
     processor = MultiFileProcessor()
     temp_files = []
     all_content = []
+    s3_urls = []
     
     try:
         for file in files:
@@ -287,17 +299,21 @@ async def request_reimbursement(
         is_approved = "approve" in combined_analysis.lower()
         decision = "Approved" if is_approved else "Rejected"
         
-        await send_email(
-            name, email, admin_email, reimbursement_details,
-            combined_analysis, temp_files, is_approved
-        )
+        # Upload files to S3 with appropriate naming
+        for temp_file in temp_files:
+            s3_url = upload_to_s3(temp_file, decision)
+            s3_urls.append(s3_url)
         
         return {
             "status": decision,
             "feedback": combined_analysis,
-            "processed_files": len(all_content)
+            "processed_files": len(all_content),
+            "uploaded_files": s3_urls
         }
         
+    except HTTPException as he:
+        logger.error(f"HTTPException: {he.detail}")
+        raise he
     except Exception as e:
         logger.error(f"Error in request_reimbursement: {str(e)}")
         raise HTTPException(
