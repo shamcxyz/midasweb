@@ -3,6 +3,16 @@
 import { useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import type { FormEvent } from "react";
+import DashboardLayout from "../layouts/layout";
+
+const formatMarkdown = (text: string) => {
+  return text
+    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*(.*?)\*/g, '<em>$1</em>')
+    .replace(/### (.*?)\n/g, '<h3 class="text-xl font-bold my-3">$1</h3>')
+    .replace(/- /g, '• ')
+    .split('\n').map(line => `<p class="mb-2">${line}</p>`).join('');
+};
 
 export default function UploadPage(): JSX.Element {
   const router = useRouter();
@@ -17,36 +27,38 @@ export default function UploadPage(): JSX.Element {
     status: string;
     feedback: string;
   } | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isDetailsExpanded, setIsDetailsExpanded] = useState(false);
 
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    
-    // Check if user is logged in first
-    const userResponse = await fetch("http://localhost:4999/api/profile", {
-      credentials: "include"
-    });
-    
-    if (!userResponse.ok) {
-      alert("Please log in first");
-      router.push("/login");
-      return;
-    }
-
-    if (!file || !amount || !details) {
-      alert("Please fill in all required fields");
-      return;
-    }
-
-    const formData = new FormData();
-    formData.append("reimbursement_details", JSON.stringify({
-      type: reimbursementType,
-      amount: amount,
-      documentType: documentType,
-      details: details
-    }));
-    formData.append("receipt", file);
+    setIsLoading(true);
 
     try {
+      const userResponse = await fetch("http://localhost:4999/api/profile", {
+        credentials: "include"
+      });
+      
+      if (!userResponse.ok) {
+        alert("Please log in first");
+        router.push("/login");
+        return;
+      }
+
+      if (!file || !amount || !details) {
+        alert("Please fill in all required fields");
+        return;
+      }
+
+      const formData = new FormData();
+      formData.append("reimbursement_details", JSON.stringify({
+        type: reimbursementType,
+        amount: amount,
+        documentType: documentType,
+        details: details
+      }));
+      formData.append("receipt", file);
+
       const response = await fetch("http://localhost:4999/api/request_reimbursement", {
         method: "POST",
         credentials: "include",
@@ -74,117 +86,170 @@ export default function UploadPage(): JSX.Element {
         feedback: error.message || "Failed to submit reimbursement request. Please try again."
       });
       setShowModal(true);
+    } finally {
+      setIsLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-[#fdf7f5] to-[#f7ede9] flex items-center justify-center p-6">
-      <div className="bg-white shadow-xl rounded-xl p-8 max-w-lg w-full border border-gray-200">
-        <h1 className="text-4xl font-serif font-semibold text-gray-800 text-center mb-8">
-          Upload {reimbursementType} Receipt
-        </h1>
-        
-        <form onSubmit={handleSubmit} className="space-y-6">
-          <div>
-            <label className="block text-gray-800 font-medium mb-2">
-              Amount
-            </label>
-            <input
-              type="number"
-              step="0.01"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              placeholder="Enter amount"
-              className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#4a4e69] focus:border-[#4a4e69] font-medium text-gray-700 bg-gray-50 hover:bg-gray-100 transition duration-200"
-              required
-            />
-          </div>
-
-          <div>
-            <label className="block text-gray-800 font-medium mb-2">
-              Document Type
-            </label>
-            <select
-              value={documentType}
-              onChange={(e) => setDocumentType(e.target.value)}
-              className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#4a4e69] focus:border-[#4a4e69] font-medium text-gray-700 bg-gray-50 hover:bg-gray-100 transition duration-200"
-              required
-            >
-              <option value="receipt">Receipt</option>
-              <option value="proof_of_purchase">Proof of Purchase</option>
-              <option value="bank_statement">Bank Statement</option>
-              <option value="other">Other</option>
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-gray-800 font-medium mb-2">
-              Reimbursement Details
-            </label>
-            <textarea
-              value={details}
-              onChange={(e) => setDetails(e.target.value)}
-              placeholder="Enter details about your reimbursement request"
-              className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#4a4e69] focus:border-[#4a4e69] font-medium text-gray-700 bg-gray-50 hover:bg-gray-100 transition duration-200"
-              rows={4}
-              required
-            />
-          </div>
-
-          <div>
-            <label className="block text-gray-800 font-medium mb-2">
-              Upload Document
-            </label>
-            <div className="flex items-center justify-center w-full">
-              <label className="w-full flex flex-col items-center px-4 py-6 bg-gray-50 text-gray-700 rounded-lg border border-gray-300 border-dashed cursor-pointer hover:bg-gray-100">
-                <svg className="w-8 h-8 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                </svg>
-                <span className="text-sm font-medium">
-                  {file ? file.name : "Drop files here or click to upload"}
-                </span>
-                <input
-                  type="file"
-                  className="hidden"
-                  onChange={(e) => setFile(e.target.files?.[0] || null)}
-                  required
-                />
+    <DashboardLayout>
+      <div className="min-h-screen bg-gradient-to-b from-[#fdf7f5] to-[#f7ede9] flex items-center justify-center p-6">
+        <div className="bg-white shadow-xl rounded-xl p-8 max-w-lg w-full border border-gray-200">
+          <h1 className="text-4xl font-serif font-semibold text-gray-800 text-center mb-8">
+            Upload {reimbursementType} Receipt
+          </h1>
+          
+          <form onSubmit={handleSubmit} className="space-y-6">
+            <div>
+              <label className="block text-gray-800 font-medium mb-2">
+                Amount
               </label>
+              <input
+                type="number"
+                step="0.01"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                placeholder="Enter amount"
+                className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#4a4e69] focus:border-[#4a4e69] font-medium text-gray-700 bg-gray-50 hover:bg-gray-100 transition duration-200"
+                required
+              />
+            </div>
+
+            <div>
+              <label className="block text-gray-800 font-medium mb-2">
+                Document Type
+              </label>
+              <select
+                value={documentType}
+                onChange={(e) => setDocumentType(e.target.value)}
+                className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#4a4e69] focus:border-[#4a4e69] font-medium text-gray-700 bg-gray-50 hover:bg-gray-100 transition duration-200"
+                required
+              >
+                <option value="receipt">Receipt</option>
+                <option value="proof_of_purchase">Proof of Purchase</option>
+                <option value="bank_statement">Bank Statement</option>
+                <option value="other">Other</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-gray-800 font-medium mb-2">
+                Reimbursement Details
+              </label>
+              <textarea
+                value={details}
+                onChange={(e) => setDetails(e.target.value)}
+                placeholder="Enter details about your reimbursement request"
+                className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#4a4e69] focus:border-[#4a4e69] font-medium text-gray-700 bg-gray-50 hover:bg-gray-100 transition duration-200"
+                rows={4}
+                required
+              />
+            </div>
+
+            <div>
+              <label className="block text-gray-800 font-medium mb-2">
+                Upload Document
+              </label>
+              <div className="flex items-center justify-center w-full">
+                <label className="w-full flex flex-col items-center px-4 py-6 bg-gray-50 text-gray-700 rounded-lg border border-gray-300 border-dashed cursor-pointer hover:bg-gray-100">
+                  <svg className="w-8 h-8 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                  </svg>
+                  <span className="text-sm font-medium">
+                    {file ? file.name : "Drop files here or click to upload"}
+                  </span>
+                  <input
+                    type="file"
+                    className="hidden"
+                    onChange={(e) => setFile(e.target.files?.[0] || null)}
+                    required
+                  />
+                </label>
+              </div>
+            </div>
+
+            <div className="flex gap-4">
+              <button
+                type="button"
+                onClick={() => router.back()}
+                className="flex-1 bg-[#f7ede9] text-gray-800 py-3 px-6 rounded-lg font-medium hover:bg-[#f5b8b8] transition duration-200 shadow-md"
+              >
+                Back
+              </button>
+              <button
+                type="submit"
+                className="flex-1 bg-[#4a4e69] text-white py-3 px-6 rounded-lg font-medium hover:bg-[#2e2f3e] transition duration-200 shadow-md"
+              >
+                Submit
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      {isLoading && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white shadow-xl rounded-lg p-8 max-w-md w-full mx-4">
+            <div className="flex flex-col items-center">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#4a4e69] mb-4"></div>
+              <p className="text-xl font-medium text-gray-800">
+                Verifying Reimbursement
+                <span className="animate-pulse">...</span>
+              </p>
             </div>
           </div>
+        </div>
+      )}
 
-          <div className="flex gap-4">
-            <button
-              type="button"
-              onClick={() => router.back()}
-              className="flex-1 bg-[#f7ede9] text-gray-800 py-3 px-6 rounded-lg font-medium hover:bg-[#f5b8b8] transition duration-200 shadow-md"
-            >
-              Back
-            </button>
-            <button
-              type="submit"
-              className="flex-1 bg-[#4a4e69] text-white py-3 px-6 rounded-lg font-medium hover:bg-[#2e2f3e] transition duration-200 shadow-md"
-            >
-              Submit
-            </button>
-          </div>
-        </form>
-      </div>
-      
-      {showModal && (
+      {showModal && !isLoading && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white shadow-xl rounded-lg p-8 max-w-md w-full mx-4">
             <h2 className="text-3xl font-serif font-semibold text-gray-800 text-center mb-6">
-              Submission Result
+              Reimbursement Decision
             </h2>
             <div className="mb-6">
-              <p className="text-xl font-medium text-gray-800 mb-2">
-                Status: <span className="text-[#4a4e69]">{submissionResult?.status}</span>
+              <p className="text-xl font-medium text-gray-800 mb-2 flex items-center gap-2">
+                Status: 
+                <span className={`${
+                  submissionResult?.status === "Approved" 
+                    ? "text-green-600" 
+                    : submissionResult?.status === "Rejected"
+                    ? "text-red-600"
+                    : "text-[#4a4e69]"
+                }`}>
+                  {submissionResult?.status}
+                </span>
               </p>
-              <p className="text-gray-700 text-lg">
-                {submissionResult?.feedback}
-              </p>
+              
+              <button 
+                onClick={() => setIsDetailsExpanded(!isDetailsExpanded)}
+                className="w-full text-left p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-all duration-200"
+              >
+                <div className="flex justify-between items-center">
+                  <span className="font-medium text-gray-800">View Details</span>
+                  <svg 
+                    className={`w-5 h-5 transform transition-transform ${isDetailsExpanded ? 'rotate-180' : ''}`} 
+                    fill="none" 
+                    stroke="currentColor" 
+                    viewBox="0 0 24 24"
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
+                  </svg>
+                </div>
+              </button>
+              
+              {isDetailsExpanded && (
+                <div className="mt-3 p-4 bg-gray-50 rounded-lg">
+                  <div 
+                    className="text-gray-700 prose prose-sm"
+                    dangerouslySetInnerHTML={{ 
+                      __html: submissionResult?.feedback ? formatMarkdown(submissionResult.feedback) : '' 
+                    }}
+                  />
+                </div>
+              )}
             </div>
+
             <div className="flex gap-4">
               <button
                 onClick={() => router.push("/dashboard/groups")}
@@ -208,6 +273,6 @@ export default function UploadPage(): JSX.Element {
           </div>
         </div>
       )}
-    </div>
+    </DashboardLayout>
   );
 }

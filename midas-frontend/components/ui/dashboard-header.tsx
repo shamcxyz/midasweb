@@ -19,7 +19,7 @@ export default function DashboardHeader() {
   };
 
   return (
-    <header className="z-30 w-full bg-[#fefaf6]">
+    <header className="z-30 w-full">
       <div className="mx-auto max-w-6xl px-4 sm:px-6">
         <div className="flex h-14 items-center justify-between rounded-full bg-white shadow-md px-6">
           {/* Logo */}
