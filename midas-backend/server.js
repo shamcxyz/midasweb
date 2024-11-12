@@ -390,9 +390,9 @@ async function forwardReimbursementRequest(data, receiptPath) {
     form.append('email', data.email);
     form.append('admin_email', data.admin_email);
     form.append('reimbursement_details', data.reimbursement_details);
-    form.append('receipt', fs.createReadStream(receiptPath));
+    form.append('files', fs.createReadStream(receiptPath)); 
     // Make POST request to Python API's reimbursement endpoint
-    const response = await axios.post(`${process.env.PYTHON_API_URL}/api/request_reimbursement`, form, {
+    const response = await axios.post(`${process.env.PYTHON_API_URL}/request_reimbursement`, form, {
       headers: form.getHeaders()
     });
 
@@ -430,7 +430,7 @@ app.post("/api/request_reimbursement", upload.single('receipt'), isAuthenticated
 
     // Validate receipt file
     if (!receipt) {
-      return res.status(400).json({ error: "Receipt file is required and must be a .docx file." });
+      return res.status(400).json({ error: "Receipt file is required." });
     }
 
     // Forward the request to Python API
