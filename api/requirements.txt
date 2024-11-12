@@ -9,3 +9,4 @@ python-docx
 PyPDF2==3.0.0
 pillow==10.0.0
 easyocr==1.7.0
+boto3
