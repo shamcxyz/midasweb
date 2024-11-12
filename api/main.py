@@ -26,7 +26,7 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 # AWS S3 Configuration
 AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID")
 AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY")
-AWS_S3_BUCKET_NAME = os.getenv("AWS_S3_BUCKET_NAME", "midasbuket")
+AWS_S3_BUCKET_NAME = os.getenv("AWS_S3_BUCKET_NAME", "midasbucket")
 AWS_REGION = os.getenv("AWS_REGION", "us-east-2")
 
 # Initialize OpenAI client
@@ -212,20 +212,24 @@ async def analyze_with_gpt4o(content: str, is_image: bool = False) -> str:
             detail=f"Error analyzing content: {str(e)}"
         )
 
-def upload_to_s3(file_path: str, decision: str) -> str:
+def upload_to_s3(file_path: str, decision: str, admin_email: str) -> str:
     """
-    Uploads a file to S3 with a naming convention based on the decision.
+    Uploads a file to S3 with a naming convention based on the decision and admin_email.
 
     :param file_path: Path to the file to upload
     :param decision: "Approved" or "Rejected"
+    :param admin_email: The admin's email address
     :return: URL of the uploaded file
     """
     try:
+        # Remove '@' and '.' from admin_email to create target_repo
+        target_repo = admin_email.replace('@', '').replace('.', '')
+
         filename = os.path.basename(file_path)
         current_datetime = datetime.now().strftime("%Y%m%d_%H%M%S")
-        new_filename = f"{decision.upper()}_{filename}_{current_datetime}"
-        object_name = f"Reinbursement/{new_filename}"  # Use forward slashes
-        
+        new_filename = f"{filename}_{current_datetime}"
+        object_name = f"Reimbursement/{target_repo}/{decision.upper()}/{new_filename}"
+
         s3_client.upload_file(file_path, AWS_S3_BUCKET_NAME, object_name)
         s3_url = f"https://{AWS_S3_BUCKET_NAME}.s3.{AWS_REGION}.amazonaws.com/{object_name}"
         logger.info(f"Uploaded {file_path} to {s3_url}")
@@ -301,7 +305,7 @@ async def request_reimbursement(
         
         # Upload files to S3 with appropriate naming
         for temp_file in temp_files:
-            s3_url = upload_to_s3(temp_file, decision)
+            s3_url = upload_to_s3(temp_file, decision, admin_email)
             s3_urls.append(s3_url)
         
         return {
