@@ -28,29 +28,29 @@ export default function Workflows() {
   ];
 
   return (
-    <section>
-      <div className="mx-auto max-w-4xl px-4 sm:px-6 lg:px-8">
+    <section className="bg-gradient-to-b from-[#fdf7f5] to-[#f7ede9] pt-12 md:pt-20">
+      <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
         <div className="pb-12 md:pb-20">
           {/* Section header */}
           <div className="mx-auto max-w-2xl pb-12 text-center md:pb-20">
-            <h2 className="text-3xl font-semibold text-gray-200 md:text-4xl">
+            <h2 className="text-3xl font-serif font-semibold text-gray-800 md:text-4xl">
               Why Choose Midas?
             </h2>
           </div>
-          
+
           {/* Workflow cards */}
-          <div className="grid gap-6 lg:grid-cols-2">
+          <div className="grid gap-8 sm:grid-cols-2 md:gap-12">
             {workflows.map((workflow, index) => (
               <div
                 key={index}
-                className="flex items-start gap-4 rounded-2xl bg-gradient-to-br from-gray-800 to-gray-900 p-6"
+                className="flex items-start gap-6 p-6 rounded-2xl bg-[#fefaf6] shadow-md hover:shadow-lg transition-shadow duration-300"
               >
                 {/* Icon */}
-                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-indigo-500">
+                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-[#4a4e69]">
                   <svg
                     xmlns="http://www.w3.org/2000/svg"
-                    width="20"
-                    height="20"
+                    width="24"
+                    height="24"
                     fill="none"
                     viewBox="0 0 24 24"
                     className="text-white"
@@ -73,10 +73,10 @@ export default function Workflows() {
                 </div>
                 {/* Text */}
                 <div>
-                  <h3 className="text-lg font-semibold text-white">
+                  <h3 className="text-lg font-serif font-semibold text-gray-800">
                     {workflow.title}
                   </h3>
-                  <p className="text-gray-400">{workflow.description}</p>
+                  <p className="text-gray-600">{workflow.description}</p>
                 </div>
               </div>
             ))}

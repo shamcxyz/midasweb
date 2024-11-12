@@ -1,48 +1,29 @@
-// app/dashboard/layout.tsx
-"use client";
+import "../css/style.css";
+import { Inter } from "next/font/google";
+import localFont from "next/font/local";
+import DashboardHeader from "@/components/ui/dashboard-header";
 
-import { useRouter } from "next/navigation";
-import { useState, useEffect } from "react";
+const inter = Inter({ subsets: ["latin"], variable: "--font-inter", display: "swap" });
+const nacelle = localFont({
+  src: [
+    { path: "../../public/fonts/nacelle-regular.woff2", weight: "400", style: "normal" },
+    { path: "../../public/fonts/nacelle-italic.woff2", weight: "400", style: "italic" },
+    { path: "../../public/fonts/nacelle-semibold.woff2", weight: "600", style: "normal" },
+    { path: "../../public/fonts/nacelle-semibolditalic.woff2", weight: "600", style: "italic" },
+  ],
+  variable: "--font-nacelle",
+  display: "swap",
+});
 
-export default function DashboardLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
-  const router = useRouter();
-  const [user, setUser] = useState(null);
-
-  useEffect(() => {
-    async function fetchUserProfile() {
-      try {
-        const response = await fetch("http://localhost:4999/api/profile", {
-          credentials: "include",
-        });
-
-        if (response.ok) {
-          const data = await response.json();
-          setUser(data);
-        } else {
-          router.push("/signin");
-        }
-      } catch (error) {
-        console.error("Error fetching profile:", error);
-        router.push("/signin");
-      }
-    }
-
-    fetchUserProfile();
-  }, []);
-
-  if (!user) {
-    return null;
-  }
-
+export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="min-h-screen flex flex-col bg-gray-100">
-      <main className="flex-1">
-        {children}
-      </main>
-    </div>
+    <html lang="en">
+      <body className={`${inter.variable} ${nacelle.variable} bg-gray-950 font-inter text-base text-gray-200 antialiased`}>
+        <div className="flex min-h-screen flex-col overflow-hidden supports-[overflow:clip]:overflow-clip">
+          <DashboardHeader />
+          <main className="flex-grow">{children}</main>
+        </div>
+      </body>
+    </html>
   );
 }

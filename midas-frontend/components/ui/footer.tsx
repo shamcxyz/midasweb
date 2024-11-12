@@ -3,7 +3,7 @@ import FooterIllustration from "@/public/images/footer-illustration.svg";
 
 export default function Footer() {
   return (
-    <footer>
+    <footer className="bg-[#fefaf6] w-full">
       <div className="relative mx-auto max-w-6xl px-4 sm:px-6">
         {/* Footer illustration */}
         <div
@@ -22,11 +22,11 @@ export default function Footer() {
         <div className="flex justify-between items-end py-8 md:py-12">
           {/* Left Side - Contact Info */}
           <div className="text-sm text-left">
-            <p className="text-indigo-200/65">
+            <p className="text-gray-700">
               © midasai.com
-              <span className="text-gray-700"> · </span>
+              <span className="text-gray-500"> · </span>
               <a
-                className="text-indigo-200/65 transition hover:text-indigo-500"
+                className="text-gray-700 transition hover:text-gray-500"
                 href="#0"
               >
                 Terms
@@ -37,7 +37,7 @@ export default function Footer() {
           {/* Right Side - Social Media Icons */}
           <div className="flex gap-3">
             <a
-              className="text-indigo-500 transition hover:text-indigo-400"
+              className="text-gray-700 transition hover:text-gray-500"
               href="#0"
               aria-label="Twitter"
             >
@@ -50,7 +50,7 @@ export default function Footer() {
               </svg>
             </a>
             <a
-              className="text-indigo-500 transition hover:text-indigo-400"
+              className="text-gray-700 transition hover:text-gray-500"
               href="#0"
               aria-label="Github"
             >

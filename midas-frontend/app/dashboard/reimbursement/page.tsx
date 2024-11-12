@@ -37,21 +37,21 @@ export default function ReimbursementPage(): JSX.Element {
   };
 
   return (
-    <div className="flex items-center justify-center p-6">
-      <div className="bg-white shadow-xl rounded-lg p-8 max-w-lg w-full">
-        <h1 className="text-3xl font-bold text-center text-gray-800 mb-8">
+    <div className="min-h-screen bg-gradient-to-b from-[#fdf7f5] to-[#f7ede9] flex items-center justify-center p-6">
+      <div className="bg-white shadow-xl rounded-xl p-8 max-w-lg w-full border border-gray-200">
+        <h1 className="text-4xl font-serif font-semibold text-gray-800 text-center mb-8">
           Reimbursement Requests
         </h1>
         
         <form onSubmit={handleReimbursementSubmit} className="space-y-6">
           <div>
-            <label className="block text-gray-800 font-semibold mb-3">
+            <label className="block text-gray-800 font-medium mb-2">
               Select Reimbursement Type
             </label>
             <select
               value={reimbursementType}
               onChange={(e) => setReimbursementType(e.target.value)}
-              className="w-full p-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 font-medium text-gray-700 bg-gray-50 hover:bg-gray-100 transition-colors duration-200"
+              className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#4a4e69] focus:border-[#4a4e69] font-medium text-gray-700 bg-gray-50 hover:bg-gray-100 transition duration-200"
             >
               <option value="Uber">Uber</option>
               <option value="Hotel">Hotel</option>
@@ -64,13 +64,13 @@ export default function ReimbursementPage(): JSX.Element {
             <button
               type="button"
               onClick={() => router.push('/dashboard/groups')}
-              className="flex-1 bg-gray-200 text-gray-800 py-3 px-6 rounded-lg font-semibold hover:bg-gray-300 transition-colors duration-200 shadow-md"
+              className="flex-1 bg-[#f7ede9] text-gray-800 py-3 px-6 rounded-lg font-medium hover:bg-[#f5b8b8] transition duration-200 shadow-md"
             >
               Back
             </button>
             <button
               type="submit"
-              className="flex-1 bg-gray-800 text-white py-3 px-6 rounded-lg font-semibold hover:bg-gray-900 transition-colors duration-200 shadow-md"
+              className="flex-1 bg-[#4a4e69] text-white py-3 px-6 rounded-lg font-medium hover:bg-[#2e2f3e] transition duration-200 shadow-md"
             >
               Next
             </button>
@@ -79,4 +79,4 @@ export default function ReimbursementPage(): JSX.Element {
       </div>
     </div>
   );
-} 
+}
