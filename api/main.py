@@ -12,7 +12,7 @@ import boto3
 from botocore.exceptions import NoCredentialsError, ClientError
 from docx import Document
 import PyPDF2
-import re  
+import re
 
 # Initialize Logging
 logging.basicConfig(level=logging.INFO)
@@ -181,8 +181,6 @@ class MultiFileProcessor:
             raise ValueError(f"Error processing file {file_path}: {str(e)}")
 
 async def analyze_with_gpt4o(content: str, is_image: bool = False) -> Dict[str, str]:
-    current_date = datetime.now().strftime("%Y-%m-%d")
-    
     try:
         if is_image:
             messages = [
@@ -190,7 +188,9 @@ async def analyze_with_gpt4o(content: str, is_image: bool = False) -> Dict[str, 
                     "role": "system",
                     "content": (
                         "You are an assistant helping with reimbursement requests. "
-                        "Analyze the receipt image and you must state explicitly to 'Approve' or 'Reject' in the feedback. Do not consider the dates when processing your decision"
+                        "Analyze the receipt image and decide whether to 'Approve' or 'Reject' the request. "
+                        "Do not consider the dates or any date-related information when processing your decision. "
+                        "Focus solely on the content provided. "
                         "Please respond in the following format:\n\n"
                         "Decision: [Approve/Reject]\n"
                         "Feedback: [Your explanation here]\n\n"
@@ -208,7 +208,9 @@ async def analyze_with_gpt4o(content: str, is_image: bool = False) -> Dict[str, 
                     "role": "system",
                     "content": (
                         "You are an assistant helping with reimbursement requests. "
-                        "Analyze the document and you must state explicitly to 'Approve' or 'Reject' in the feedback. Do not consider the dates when processing your decision."
+                        "Analyze the document and decide whether to 'Approve' or 'Reject' the request. "
+                        "Do not consider the dates or any date-related information when processing your decision. "
+                        "Focus solely on the content provided. "
                         "Please respond in the following format:\n\n"
                         "Decision: [Approve/Reject]\n"
                         "Feedback: [Your explanation here]\n\n"
@@ -222,7 +224,7 @@ async def analyze_with_gpt4o(content: str, is_image: bool = False) -> Dict[str, 
             ]
         
         response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
+            model="gpt-4o-mini",
             messages=messages
         )
         
@@ -234,12 +236,15 @@ async def analyze_with_gpt4o(content: str, is_image: bool = False) -> Dict[str, 
         feedback_lines = []
         for line in lines:
             if line.lower().startswith("decision:"):
-                decision = line[len("Decision:"):].strip()
+                decision = line[len("Decision:"):].strip().capitalize()
             elif line.lower().startswith("feedback:"):
                 feedback_lines.append(line[len("Feedback:"):].strip())
             else:
                 feedback_lines.append(line.strip())
         feedback = '\n'.join(feedback_lines)
+
+        if decision not in ['Approve', 'Reject']:
+            decision = 'Rejected'
 
         return {'decision': decision, 'feedback': feedback}
                 
@@ -266,29 +271,10 @@ def upload_to_s3(file_path: str, original_filename: str, decision: str, admin_em
         new_filename = f"{name}_{current_datetime}{ext}"
         object_name = f"Reimbursement/{target_repo}/{decision.upper()}/{new_filename}"
 
-        # Upload the file
-        s3_client.upload_file(
-            file_path, 
-            AWS_S3_BUCKET_NAME, 
-            object_name,
-            ExtraArgs={
-                'ContentDisposition': 'inline',  # This makes the browser display the file instead of downloading it
-                'ContentType': _get_content_type(ext)  # Add appropriate content type based on file extension
-            }
-        )
-
-        # Generate presigned URL that expires in 1 hour (3600 seconds)
-        presigned_url = s3_client.generate_presigned_url('get_object',
-            Params={
-                'Bucket': AWS_S3_BUCKET_NAME,
-                'Key': object_name,
-                'ResponseContentDisposition': 'inline',
-            },
-            ExpiresIn=3600
-        )
-        
-        logger.info(f"Uploaded {file_path} with presigned URL: {presigned_url}")
-        return presigned_url
+        s3_client.upload_file(file_path, AWS_S3_BUCKET_NAME, object_name)
+        s3_url = f"https://{AWS_S3_BUCKET_NAME}.s3.{AWS_REGION}.amazonaws.com/{object_name}"
+        logger.info(f"Uploaded {file_path} to {s3_url}")
+        return s3_url
     except FileNotFoundError:
         logger.error(f"The file {file_path} was not found.")
         raise HTTPException(
@@ -307,18 +293,6 @@ def upload_to_s3(file_path: str, original_filename: str, decision: str, admin_em
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error uploading file to S3."
         )
-
-def _get_content_type(ext: str) -> str:
-    """Helper function to determine the content type based on file extension"""
-    content_types = {
-        '.pdf': 'application/pdf',
-        '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-        '.jpg': 'image/jpeg',
-        '.jpeg': 'image/jpeg',
-        '.png': 'image/png',
-        '.zip': 'application/zip'
-    }
-    return content_types.get(ext.lower(), 'application/octet-stream')
 
 @app.post("/request_reimbursement")
 async def request_reimbursement(
@@ -370,20 +344,14 @@ async def request_reimbursement(
             decision = analysis_result['decision']
             feedback = analysis_result['feedback']
 
-            # Comment out verification step
-            # is_verified = await verify_decision_feedback(decision, feedback)
-            # if not is_verified:
-            #     # Adjust the decision based on verification
-            #     decision = 'Rejected'
-
             combined_feedback += f"{feedback}\n\n"
             decisions.append(decision.capitalize())
         
         # Determine the overall decision
-        # if all(dec.lower() == 'approved' for dec in decisions):
-        final_decision = 'Approved'
-        # else:
-        #     final_decision = 'Rejected'
+        if all(dec.lower() == 'approve' for dec in decisions):
+            final_decision = 'Approved'
+        else:
+            final_decision = 'Rejected'
         
         # Upload files to S3 with appropriate naming
         for temp_file, original_filename in temp_files:
