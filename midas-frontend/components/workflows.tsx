@@ -47,29 +47,28 @@ export default function Workflows() {
               >
                 {/* Icon */}
                 <div className="flex h-12 w-12 items-center justify-center rounded-full bg-[#4a4e69]">
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    width="24"
-                    height="24"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    className="text-white"
-                  >
-                    <path
-                      d="M9 11l3 3L22 4"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                    <path
-                      d="M21 12v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                  </svg>
+                  {index === 0 ? (
+                    // Policy Checks Icon
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24" className="text-white">
+                      <path stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h10a2 2 0 012 2v14a2 2 0 01-2 2zM9 6h6"/>
+                    </svg>
+                  ) : index === 1 ? (
+                    // ERP Integration Icon
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24" className="text-white">
+                      <path stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 16l3-8 3 8c-1.5 2-4.5 2-6 0zm-8 0l3-8 3 8c-1.5 2-4.5 2-6 0zm-8 0l3-8 3 8c-1.5 2-4.5 2-6 0z"/>
+                    </svg>
+                  ) : index === 2 ? (
+                    // AI Validation Icon
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24" className="text-white">
+                      <path stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6.5a5.5 5.5 0 014 9.28V17a2 2 0 01-2 2h-4a2 2 0 01-2-2v-1.22a5.5 5.5 0 014-9.28zM8 17h8m-4-7v4"/>
+                      <circle cx="12" cy="12" r="9" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2"/>
+                    </svg>
+                  ) : (
+                    // Automation Icon
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24" className="text-white">
+                      <path stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                    </svg>
+                  )}
                 </div>
                 {/* Text */}
                 <div>

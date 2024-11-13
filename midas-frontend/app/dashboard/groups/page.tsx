@@ -66,6 +66,8 @@ export default function GroupsPage(): JSX.Element {
       });
 
       const data = await response.json();
+      console.log('Response status:', response.status);
+      console.log('Response data:', data);
 
       if (response.ok) {
         setShowJoinModal(false);
@@ -152,13 +154,13 @@ export default function GroupsPage(): JSX.Element {
                     }`}
                   >
                     <div className="h-36 bg-gradient-to-r from-[#fdf7f5] to-[#f7ede9] flex items-center justify-center text-gray-800 text-3xl font-serif font-semibold">
-                      {group.name.charAt(0)}
+                      {group.company.charAt(0)}
                     </div>
 
                     <div className="p-8 flex flex-col h-[calc(100%-144px)]">
                       <div>
                         <h3 className="text-2xl font-serif font-semibold text-gray-800 mb-3">
-                          {group.name}
+                          {group.company}
                         </h3>
                         <p className="text-gray-600">
                           Active since {new Date(group.lastActive).toLocaleDateString()}

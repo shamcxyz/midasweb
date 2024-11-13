@@ -52,6 +52,7 @@ const reimbursementRequestSchema = new mongoose.Schema({
   adminEmail: { type: String, required: true },
   reimbursementDetails: { type: String, required: true },
   receiptPath: { type: String, required: true },
+  s3Urls: [{ type: String }], // Add this field for S3 URLs
   status: { type: String, enum: ['Approved', 'Rejected'], required: true },
   feedback: { type: String, required: true },
   groupId: { type: mongoose.Schema.Types.ObjectId, ref: 'Group', required: true }, // Link to the group
@@ -319,6 +320,7 @@ app.get("/api/admin/users", isAuthenticated, async (req, res) => {
 
 // Join group endpoint
 app.post("/api/join_group", isAuthenticated, async (req, res) => {
+
   const { group_code } = req.body;
 
   if (!group_code) {
@@ -348,12 +350,14 @@ app.post("/api/join_group", isAuthenticated, async (req, res) => {
     }
 
     // Add the group to user's groups array
+    console.log(user.email);
     user.groups.push(group._id);
 
     // Set this group as active only if the user doesn't have an active group
     if (!user.activeGroup) {
       user.activeGroup = group._id;
     }
+
 
     await user.save();
 
@@ -469,22 +473,23 @@ app.post("/api/request_reimbursement", upload.single('receipt'), isAuthenticated
       receipt.path
     );
 
-    // Save the reimbursement request in the database
+    // Save the reimbursement request in the database with S3 URLs
     const reimbursementRequest = new ReimbursementRequest({
       userEmail: user.email,
       adminEmail: admin_email,
       reimbursementDetails: reimbursement_details,
       receiptPath: receipt.path,
+      s3Urls: pythonResponse.uploaded_files || [], // Store the S3 URLs array
       status: pythonResponse.status,
       feedback: pythonResponse.feedback,
-      groupId: user.activeGroup._id, // Link to the active group
+      groupId: user.activeGroup._id,
       createdAt: new Date()
     });
     await reimbursementRequest.save();
 
     res.status(200).json(pythonResponse);
   } catch (error) {
-    console.log("Error");
+    console.log("Error:", error);
     res.status(500).json({ error: "An error occurred while processing your request." });
   }
 });
